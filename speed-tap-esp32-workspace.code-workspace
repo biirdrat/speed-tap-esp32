@@ -1,7 +1,17 @@
 {
-    "folders": [
-        {
-            "path": "."
-        }
-    ]
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+
+	"settings": {
+		"terminal.integrated.profiles.windows": {
+			"ESP-IDF": {
+				"path": "C:/Windows/System32/cmd.exe",
+				"args": ["/k", "C:/Espressif/frameworks/esp-idf-v5.4/export.bat"]
+			}
+		},
+		"terminal.integrated.defaultProfile.windows": "ESP-IDF"
+	}
 }
