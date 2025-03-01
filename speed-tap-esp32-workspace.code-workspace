@@ -12,6 +12,9 @@
 				"args": ["/k", "C:/Espressif/frameworks/esp-idf-v5.4/export.bat"]
 			}
 		},
-		"terminal.integrated.defaultProfile.windows": "ESP-IDF"
+		"terminal.integrated.defaultProfile.windows": "ESP-IDF",
+		"files.associations": {
+			"stdio.h": "c"
+		}
 	}
 }

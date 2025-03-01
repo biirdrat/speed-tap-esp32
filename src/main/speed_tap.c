@@ -2,6 +2,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "i2c_lcd.h"
 
 #define LED_PIN GPIO_NUM_2  // Change this to your LED pin number
 
@@ -27,5 +29,6 @@ void app_main(void)
     printf("ESP32 FreeRTOS LED Blink Example\n");
 
     // Create the FreeRTOS task to blink LED
-    xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
+    // xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
+    
 }
