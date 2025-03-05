@@ -2,17 +2,6 @@
 
 #include "i2c_lcd.h"
 
-#define I2C_MASTER_SCL_IO           GPIO_NUM_22
-#define I2C_MASTER_SDA_IO           GPIO_NUM_21
-#define I2C_MASTER_NUM              0
-#define I2C_MASTER_FREQ_HZ          400000
-#define I2C_MASTER_TX_BUF_DISABLE   0
-#define I2C_MASTER_RX_BUF_DISABLE   0
-#define I2C_MASTER_TIMEOUT_MS       1000
-#define I2C_NUM I2C_NUM_0
-
-#define SLAVE_ADDRESS_LCD 0x4E>>1
-
 esp_err_t err;
 
 static const char *TAG = "LCD";
