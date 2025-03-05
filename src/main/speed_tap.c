@@ -49,7 +49,7 @@ void app_main(void)
 
     // Send a message to the LCD
     snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
-    lcd_send_string("lcd_message_buffer");
+    lcd_send_string(lcd_message_buffer);
 
     ESP_LOGI(TAG, "Main Program Finished!\n");
     // Create the FreeRTOS task to blink LED
