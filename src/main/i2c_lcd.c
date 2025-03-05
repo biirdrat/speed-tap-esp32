@@ -1,9 +1,6 @@
 /** Put this in the src folder **/
 
 #include "i2c_lcd.h"
-#include "esp_log.h"
-#include "driver/i2c.h"
-#include "unistd.h"
 
 #define I2C_MASTER_SCL_IO           GPIO_NUM_22
 #define I2C_MASTER_SDA_IO           GPIO_NUM_21
@@ -18,11 +15,9 @@
 
 esp_err_t err;
 
-
-
 static const char *TAG = "LCD";
 
-static esp_err_t i2c_master_init(void)
+esp_err_t i2c_master_init(void)
 {
     int i2c_master_port = I2C_MASTER_NUM;
 

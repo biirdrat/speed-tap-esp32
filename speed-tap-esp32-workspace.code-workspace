@@ -17,7 +17,8 @@
 			"stdio.h": "c",
 			"freertos.h": "c",
 			"task.h": "c",
-			"i2c.h": "c"
+			"i2c.h": "c",
+			"esp_log.h": "c"
 		}
 	}
 }
