@@ -14,7 +14,10 @@
 		},
 		"terminal.integrated.defaultProfile.windows": "ESP-IDF",
 		"files.associations": {
-			"stdio.h": "c"
+			"stdio.h": "c",
+			"freertos.h": "c",
+			"task.h": "c",
+			"i2c.h": "c"
 		}
 	}
 }

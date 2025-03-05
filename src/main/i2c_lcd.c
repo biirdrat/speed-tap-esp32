@@ -12,12 +12,13 @@
 #define I2C_MASTER_TX_BUF_DISABLE   0
 #define I2C_MASTER_RX_BUF_DISABLE   0
 #define I2C_MASTER_TIMEOUT_MS       1000
+#define I2C_NUM I2C_NUM_0
 
 #define SLAVE_ADDRESS_LCD 0x4E>>1
 
 esp_err_t err;
 
-#define I2C_NUM I2C_NUM_0
+
 
 static const char *TAG = "LCD";
 
