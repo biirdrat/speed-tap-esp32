@@ -1,9 +1,17 @@
 #include <stdio.h>
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "i2c_lcd.h"
 
-#define LED_PIN GPIO_NUM_2  // Change this to your LED pin number
+#define LED_PIN GPIO_NUM_2
+#define LCD_MESSAGE_BUFFER_SIZE 17
+
+static const char *TAG = "MAIN";
+
+char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
 
 void led_blink_task(void *pvParameter)
 {
@@ -24,8 +32,27 @@ void led_blink_task(void *pvParameter)
 
 void app_main(void)
 {
-    printf("ESP32 FreeRTOS LED Blink Example\n");
+    // Print a starting message
+    ESP_LOGI(TAG, "Main Program Running!\n");
 
+    // Initialize the I2C bus
+    ESP_ERROR_CHECK(i2c_master_init());
+    
+    // Initialize the LCD
+    lcd_init();
+
+    // Clear the LCD screen
+    lcd_clear();
+
+    // Put the cursor at the first position
+    lcd_put_cur(0, 0);
+
+    // Send a message to the LCD
+    snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
+    lcd_send_string(lcd_message_buffer);
+
+    ESP_LOGI(TAG, "Main Program Finished!\n");
     // Create the FreeRTOS task to blink LED
-    xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
+    // xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
+    
 }
