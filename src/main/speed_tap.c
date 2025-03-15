@@ -6,12 +6,23 @@
 #include "driver/i2c.h"
 #include "i2c_lcd.h"
 
-#define LED_PIN GPIO_NUM_2
 #define LCD_MESSAGE_BUFFER_SIZE 17
+
+uint8_t const LED_PIN = 2;
+uint8_t LED0_PIN = 4;
+uint8_t LED1_PIN = 16;
+uint8_t LED2_PIN = 17;
+uint8_t LED3_PIN = 5;
+uint8_t BUTTON0_PIN = 27;
+uint8_t BUTTON1_PIN = 26;
+uint8_t BUTTON2_PIN = 5;
+uint8_t BUTTON3_PIN = 33;
 
 static const char *TAG = "MAIN";
 
 char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
+
+void initialize_gpio_pins();
 
 void led_blink_task(void *pvParameter)
 {
@@ -35,24 +46,56 @@ void app_main(void)
     // Print a starting message
     ESP_LOGI(TAG, "Main Program Running!\n");
 
+    initialize_gpio_pins();
+
     // Initialize the I2C bus
     ESP_ERROR_CHECK(i2c_master_init());
     
-    // Initialize the LCD
-    lcd_init();
+    // // Initialize the LCD
+    // lcd_init();
 
-    // Clear the LCD screen
-    lcd_clear();
+    // // Clear the LCD screen
+    // lcd_clear();
 
-    // Put the cursor at the first position
-    lcd_put_cur(0, 0);
+    // // Put the cursor at the first position
+    // lcd_put_cur(0, 0);
 
-    // Send a message to the LCD
-    snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
-    lcd_send_string(lcd_message_buffer);
+    // // Send a message to the LCD
+    // snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
+    // lcd_send_string(lcd_message_buffer);
 
     ESP_LOGI(TAG, "Main Program Finished!\n");
     // Create the FreeRTOS task to blink LED
     // xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
-    
+}
+
+void initialize_gpio_pins()
+{
+    // Configure buttons as inputs
+    gpio_config_t io_config_input = {
+        .pin_bit_mask = (1ULL << BUTTON0_PIN) |
+                        (1ULL << BUTTON1_PIN) |
+                        (1ULL << BUTTON2_PIN) |
+                        (1ULL << BUTTON3_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&io_config_input);
+
+    // Configure the LED GPIO as an output
+    gpio_config_t io_config_output = {
+        .pin_bit_mask = (1ULL << LED0_PIN) |
+                        (1ULL << LED1_PIN) |
+                        (1ULL << LED2_PIN) |
+                        (1ULL << LED3_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&io_config_output);
 }
