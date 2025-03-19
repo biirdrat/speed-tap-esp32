@@ -144,7 +144,7 @@ void initialize_timers()
     // Create the detect button timer, register callbacks, and enable timer
     ESP_ERROR_CHECK(gptimer_new_timer(&detect_button_timer_config, &detect_button_timer));
     ESP_ERROR_CHECK(gptimer_register_event_callbacks(detect_button_timer, &detect_button_callbacks, NULL));
-    ESP_ERROR_CHECK(gptimer_enable(detect_button_timer));
     ESP_ERROR_CHECK(gptimer_set_alarm_action(detect_button_timer, &detect_button_alarm_config));
+    ESP_ERROR_CHECK(gptimer_enable(detect_button_timer));
     ESP_ERROR_CHECK(gptimer_start(detect_button_timer));
 }
