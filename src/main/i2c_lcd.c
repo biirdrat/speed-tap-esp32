@@ -22,8 +22,13 @@ esp_err_t i2c_master_init(void)
     };
     
 
-    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_master_config, &i2c_bus_handle));
-    
+    err = i2c_new_master_bus(&i2c_master_config, &i2c_bus_handle);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGI(TAG, "Error configuring I2C Master: %s", esp_err_to_name(err));
+        return err;
+    }
+
     i2c_device_config_t dev_cfg =
     {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -31,7 +36,12 @@ esp_err_t i2c_master_init(void)
         .scl_speed_hz = I2C_MASTER_FREQ_HZ,
     };
 
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &i2c_dev_handle));
+    err = i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &i2c_dev_handle);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGI(TAG, "Error configuring I2C Master: %s", esp_err_to_name(err));
+        return err;
+    }
 
     return ESP_OK;
 }
@@ -56,7 +66,7 @@ void lcd_send_cmd(char cmd)
     data_t[3] = data_l | 0x08;
     
     // Send command using new I2C API
-    esp_err_t err = i2c_master_transmit(i2c_dev_handle, data_t, sizeof(data_t), -1);
+    err = i2c_master_transmit(i2c_dev_handle, data_t, sizeof(data_t), -1);
     if (err != ESP_OK) 
     {
         ESP_LOGI(TAG, "Error in sending command: %s", esp_err_to_name(err));
@@ -82,7 +92,7 @@ void lcd_send_data(char data)
     // en=0, rs=0
     data_t[3] = data_l | 0x09;
     
-    esp_err_t err = i2c_master_transmit(i2c_dev_handle, data_t, sizeof(data_t), -1);
+    err = i2c_master_transmit(i2c_dev_handle, data_t, sizeof(data_t), -1);
     if (err != ESP_OK) 
     {
         ESP_LOGI(TAG, "Error in sending command: %s", esp_err_to_name(err));
@@ -152,7 +162,7 @@ void lcd_init(void)
     usleep(1000);
 }
 
-void lcd_send_string (char *str)
+void lcd_send_string(char *str)
 {
     while (*str) lcd_send_data(*str++);
 }
