@@ -26,7 +26,9 @@ char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
 gptimer_handle_t detect_button_timer = NULL;
 
 void initialize_gpio_pins();
+void initialize_lcd();
 void initialize_timers();
+
 
 void led_blink_task(void *pvParameter)
 {
@@ -52,11 +54,20 @@ void app_main(void)
 
     initialize_gpio_pins();
 
-    initialize_timers();
+    initialize_lcd();
+    // initialize_timers();
 
     ESP_LOGI(TAG, "Main Program Finished!\n");
     // Create the FreeRTOS task to blink LED
     // xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
+}
+
+static bool IRAM_ATTR detect_button_timer_on_alarm(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
+{
+    BaseType_t high_task_awoken = pdFALSE;
+    ESP_EARLY_LOGI(TAG, "Timer Alarm Triggered! Count: %llu", edata->count_value);
+    // return whether we need to yield at the end of ISR
+    return (high_task_awoken == pdTRUE);
 }
 
 void initialize_gpio_pins()
@@ -102,19 +113,11 @@ void initialize_lcd()
         lcd_clear();
     
         // Put the cursor at the first position
-        lcd_put_cur(0, 0);
+        lcd_put_cur(1, 0);
     
         // Send a message to the LCD
         snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
-        lcd_send_string(lcd_message_buffer);
-}
-
-static bool IRAM_ATTR detect_button_timer_on_alarm(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
-{
-    BaseType_t high_task_awoken = pdFALSE;
-    ESP_EARLY_LOGI(TAG, "Timer Alarm Triggered! Count: %llu", edata->count_value);
-    // return whether we need to yield at the end of ISR
-    return (high_task_awoken == pdTRUE);
+        lcd_send_string(lcd_message_buffer);s
 }
 
 void initialize_timers()
@@ -148,3 +151,4 @@ void initialize_timers()
     ESP_ERROR_CHECK(gptimer_enable(detect_button_timer));
     ESP_ERROR_CHECK(gptimer_start(detect_button_timer));
 }
+
