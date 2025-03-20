@@ -117,7 +117,7 @@ void initialize_lcd()
     
         // Send a message to the LCD
         snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
-        lcd_send_string(lcd_message_buffer);s
+        lcd_send_string(lcd_message_buffer);
 }
 
 void initialize_timers()
