@@ -4,7 +4,7 @@
 #include "i2c_lcd.h"
 #include "esp_log.h"
 #include "esp_err.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "unistd.h"
 
 #define I2C_MASTER_SCL_IO           GPIO_NUM_22
@@ -16,7 +16,7 @@
 #define I2C_MASTER_TIMEOUT_MS       1000
 #define I2C_NUM I2C_NUM_0
 
-#define SLAVE_ADDRESS_LCD 0x4E>>1
+#define LCD_I2C_ADDR 0x4E>>1
 
 #ifdef __cplusplus
 extern "C" {

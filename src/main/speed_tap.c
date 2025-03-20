@@ -113,7 +113,7 @@ void initialize_lcd()
         lcd_clear();
     
         // Put the cursor at the first position
-        lcd_put_cur(1, 0);
+        lcd_put_cur(0, 0);
     
         // Send a message to the LCD
         snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
