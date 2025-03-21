@@ -23,12 +23,30 @@ static const char *TAG = "MAIN";
 
 char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
 
+gptimer_handle_t program_timer = NULL;
 gptimer_handle_t detect_button_timer = NULL;
+uint64_t start_count = 0;
+uint64_t end_count = 0;
 
 void initialize_gpio_pins();
 void initialize_lcd();
 void initialize_timers();
 
+void app_main(void)
+{
+    // Print a starting message
+    ESP_LOGI(TAG, "Main Program Running!\n");
+
+    initialize_gpio_pins();
+
+    initialize_lcd();
+
+    initialize_timers();
+
+    ESP_LOGI(TAG, "Main Program Finished!\n");
+    // Create the FreeRTOS task to blink LED
+    // xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
+}
 
 void led_blink_task(void *pvParameter)
 {
@@ -47,25 +65,14 @@ void led_blink_task(void *pvParameter)
     }
 }
 
-void app_main(void)
-{
-    // Print a starting message
-    ESP_LOGI(TAG, "Main Program Running!\n");
-
-    initialize_gpio_pins();
-
-    initialize_lcd();
-    // initialize_timers();
-
-    ESP_LOGI(TAG, "Main Program Finished!\n");
-    // Create the FreeRTOS task to blink LED
-    // xTaskCreate(&led_blink_task, "LED Blink Task", 2048, NULL, 5, NULL);
-}
-
 static bool IRAM_ATTR detect_button_timer_on_alarm(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
 {
     BaseType_t high_task_awoken = pdFALSE;
-    ESP_EARLY_LOGI(TAG, "Timer Alarm Triggered! Count: %llu", edata->count_value);
+    // ESP_EARLY_LOGI(TAG, "Timer Alarm Triggered! Count: %llu", edata->count_value);
+
+    gptimer_get_raw_count(program_timer, &end_count);
+    ESP_EARLY_LOGI(TAG, "Elapsed Count: %llu", end_count - start_count);
+    start_count = end_count;
     // return whether we need to yield at the end of ISR
     return (high_task_awoken == pdTRUE);
 }
@@ -122,6 +129,15 @@ void initialize_lcd()
 
 void initialize_timers()
 {
+    
+    // Set the configuration for the program timer
+    gptimer_config_t program_timer_config=
+    {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+        .direction = GPTIMER_COUNT_UP,
+        .resolution_hz = 1000000,
+    };
+
     // Set the configuration for the detect button timer
     gptimer_config_t detect_button_timer_config = 
     {
@@ -139,10 +155,15 @@ void initialize_timers()
     // Set the configuration for the detect button timer
     gptimer_alarm_config_t detect_button_alarm_config = 
     {
-        .alarm_count = 2000000, // 1-second interval
-        .reload_count = 0,      // Restart count from zero after alarm
-        .flags.auto_reload_on_alarm = true, // Keeps triggering every second
+        .alarm_count = 5000000,
+        .reload_count = 0,
+        .flags.auto_reload_on_alarm = true,
     };
+
+    // Create the program timer and enable timer
+    ESP_ERROR_CHECK(gptimer_new_timer(&program_timer_config, &program_timer));
+    ESP_ERROR_CHECK(gptimer_enable(program_timer));
+    ESP_ERROR_CHECK(gptimer_start(program_timer));
 
     // Create the detect button timer, register callbacks, and enable timer
     ESP_ERROR_CHECK(gptimer_new_timer(&detect_button_timer_config, &detect_button_timer));
@@ -150,5 +171,7 @@ void initialize_timers()
     ESP_ERROR_CHECK(gptimer_set_alarm_action(detect_button_timer, &detect_button_alarm_config));
     ESP_ERROR_CHECK(gptimer_enable(detect_button_timer));
     ESP_ERROR_CHECK(gptimer_start(detect_button_timer));
+
+    gptimer_get_raw_count(program_timer, &start_count);
 }
 
