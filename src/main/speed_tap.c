@@ -95,7 +95,8 @@ void process_buttons_task(void *pvParameter)
         // Wait indefinitely for the semaphore
         if (xSemaphoreTake(process_buttons_semaphore, portMAX_DELAY) == pdTRUE)
         {
-            ESP_LOGI(TAG, "Processing Buttons from task\n");
+            int button_state = gpio_get_level(BUTTON0_PIN);
+            ESP_LOGI(TAG, "GPIO 27 state: %d", button_state);
         }
     }
 }
@@ -193,7 +194,7 @@ void initialize_timers()
     // Set the configuration for the detect button timer
     gptimer_alarm_config_t process_buttons_alarm_config = 
     {
-        .alarm_count = 5000000,
+        .alarm_count = 2000000,
         .reload_count = 0,
         .flags.auto_reload_on_alarm = true,
     };
