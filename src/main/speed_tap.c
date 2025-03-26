@@ -39,6 +39,7 @@ const uint8_t BUTTON2_PIN = 5;
 const uint8_t BUTTON3_PIN = 33;
 
 SemaphoreHandle_t process_buttons_semaphore;
+SemaphoreHandle_t button_data_mutex;
 
 char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
 
@@ -49,12 +50,13 @@ uint64_t end_count = 0;
 
 button buttons_array[NUM_BUTTONS];
 
+void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
 void initialize_gpio_pins();
 void initialize_buttons();
 void initialize_lcd();
 void initialize_timers();
-void initialize_semaphores();
+void initialize_freertos_objects();
 
 void app_main(void)
 {
@@ -69,11 +71,12 @@ void app_main(void)
 
     initialize_timers();
 
-    initialize_semaphores();
+    initialize_freertos_objects();
 
     ESP_LOGI(TAG, "Main Program Finished!\n");
 
-    xTaskCreate(&process_buttons_task, "Process Buttons Task", 2048, NULL, 1, NULL);
+    xTaskCreate(&game_control_task, "Game Control Task", 2048, NULL, 2, NULL);
+    xTaskCreate(&process_buttons_task, "Process Buttons Task", 2048, NULL, 24, NULL);
 }
 
 static bool IRAM_ATTR process_buttons_timer_on_alarm(
@@ -91,6 +94,18 @@ static bool IRAM_ATTR process_buttons_timer_on_alarm(
     return (high_task_awoken == pdTRUE);
 }
 
+void game_control_task(void *pvParameter)
+{
+    while (1)
+    {
+        if(xSemaphoreTake(button_data_mutex, portMAX_DELAY) == pdTRUE)
+        {
+            xSemaphoreGive(button_data_mutex);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 void process_buttons_task(void *pvParameter)
 {
     while (1)
@@ -98,21 +113,27 @@ void process_buttons_task(void *pvParameter)
         // Wait indefinitely for the semaphore
         if (xSemaphoreTake(process_buttons_semaphore, portMAX_DELAY) == pdTRUE)
         {
-            for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
+            if(xSemaphoreTake(button_data_mutex, portMAX_DELAY) == pdTRUE)
             {
-                buttons_array[button_idx].current_input = gpio_get_level(buttons_array[button_idx].button_pin);
-                int current_input = buttons_array[button_idx].current_input;
-                int previous_input = buttons_array[button_idx].previous_input;
-                
-                if(previous_input == BUTTON_NOT_PRESSED && current_input == BUTTON_PRESSED)
+                for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
                 {
-                    buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
+                    buttons_array[button_idx].current_input = gpio_get_level(buttons_array[button_idx].button_pin);
+                    int current_input = buttons_array[button_idx].current_input;
+                    int previous_input = buttons_array[button_idx].previous_input;
+                    
+                    if(previous_input == BUTTON_NOT_PRESSED && current_input == BUTTON_PRESSED)
+                    {
+                        ESP_LOGI(TAG, "Button %d was pressed\n", button_idx);
+                        buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
+                    }
+                    else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
+                    {
+                        ESP_LOGI(TAG, "Button %d was released\n", button_idx);
+                        buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
+                    }
+                    buttons_array[button_idx].previous_input = current_input;
                 }
-                else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
-                {
-                    buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
-                }
-                buttons_array[button_idx].previous_input = current_input;
+                xSemaphoreGive(button_data_mutex);
             }
         }
     }
@@ -231,11 +252,17 @@ void initialize_timers()
     ESP_ERROR_CHECK(gptimer_start(process_buttons_timer));
 }
 
-void initialize_semaphores()
+void initialize_freertos_objects()
 {
     process_buttons_semaphore = xSemaphoreCreateBinary();
     if(process_buttons_semaphore == NULL)
     {
         ESP_LOGE(TAG, "Failed to create process_buttons_semaphore\n");
+    }
+
+    button_data_mutex = xSemaphoreCreateMutex();
+    if(button_data_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create button_data_mutex\n");
     }
 }
