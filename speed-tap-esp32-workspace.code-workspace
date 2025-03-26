@@ -19,7 +19,9 @@
 			"task.h": "c",
 			"i2c.h": "c",
 			"esp_log.h": "c",
-			"freertosconfig.h": "c"
+			"freertosconfig.h": "c",
+			"iosfwd": "c",
+			"xlocbuf": "c"
 		}
 	}
 }

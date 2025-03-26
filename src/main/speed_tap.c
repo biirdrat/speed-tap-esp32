@@ -11,8 +11,9 @@
 
 typedef enum 
 {
-    BUTTON_RELEASED = 0,
-    BUTTON_PRESSED = 1
+    BUTTON_WAS_RELEASED = 0,
+    BUTTON_WAS_PRESSED = 1,
+    BUTTON_WAITING_RESET = 2
 } button_state;
 
 typedef struct 
@@ -25,6 +26,8 @@ typedef struct
 
 static const char *TAG = "MAIN";
 
+const uint8_t BUTTON_NOT_PRESSED = 0;
+const uint8_t BUTTON_PRESSED = 1;
 const uint8_t LED_PIN = 2;
 const uint8_t LED0_PIN = 4;
 const uint8_t LED1_PIN = 16;
@@ -70,7 +73,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Main Program Finished!\n");
 
-    xTaskCreate(&process_buttons_task, "Process Buttons Task", 2048, NULL, 5, NULL);
+    xTaskCreate(&process_buttons_task, "Process Buttons Task", 2048, NULL, 1, NULL);
 }
 
 static bool IRAM_ATTR process_buttons_timer_on_alarm(
@@ -95,8 +98,22 @@ void process_buttons_task(void *pvParameter)
         // Wait indefinitely for the semaphore
         if (xSemaphoreTake(process_buttons_semaphore, portMAX_DELAY) == pdTRUE)
         {
-            int button_state = gpio_get_level(BUTTON0_PIN);
-            ESP_LOGI(TAG, "GPIO 27 state: %d", button_state);
+            for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
+            {
+                buttons_array[button_idx].current_input = gpio_get_level(buttons_array[button_idx].button_pin);
+                int current_input = buttons_array[button_idx].current_input;
+                int previous_input = buttons_array[button_idx].previous_input;
+                
+                if(previous_input == BUTTON_NOT_PRESSED && current_input == BUTTON_PRESSED)
+                {
+                    buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
+                }
+                else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
+                {
+                    buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
+                }
+                buttons_array[button_idx].previous_input = current_input;
+            }
         }
     }
 }
@@ -104,7 +121,8 @@ void process_buttons_task(void *pvParameter)
 void initialize_gpio_pins()
 {
     // Configure buttons as inputs
-    gpio_config_t io_config_input = {
+    gpio_config_t io_config_input = 
+    {
         .pin_bit_mask = (1ULL << BUTTON0_PIN) |
                         (1ULL << BUTTON1_PIN) |
                         (1ULL << BUTTON2_PIN) |
@@ -118,7 +136,8 @@ void initialize_gpio_pins()
     gpio_config(&io_config_input);
 
     // Configure the LED GPIO as an output
-    gpio_config_t io_config_output = {
+    gpio_config_t io_config_output = 
+    {
         .pin_bit_mask = (1ULL << LED0_PIN) |
                         (1ULL << LED1_PIN) |
                         (1ULL << LED2_PIN) |
@@ -143,7 +162,7 @@ void initialize_buttons()
     {
         buttons_array[button_idx].current_input = 0;
         buttons_array[button_idx].previous_input = 0;
-        buttons_array[button_idx].state = BUTTON_RELEASED;
+        buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
     }
 }
 
@@ -194,7 +213,7 @@ void initialize_timers()
     // Set the configuration for the detect button timer
     gptimer_alarm_config_t process_buttons_alarm_config = 
     {
-        .alarm_count = 2000000,
+        .alarm_count = 50000,
         .reload_count = 0,
         .flags.auto_reload_on_alarm = true,
     };
