@@ -7,7 +7,16 @@
 #include "i2c_lcd.h"
 
 #define LCD_MESSAGE_BUFFER_SIZE 17
-#define NUM_BUTTONS 4
+#define NUM_BUTTONS 6
+
+typedef enum
+{
+    IDLE = 0,
+    INTERMISSION = 1,
+    AWAITING_INPUT = 2,
+    TIMEOUT = 3,
+    GAME_OVER = 4
+} game_state;
 
 typedef enum 
 {
@@ -26,6 +35,7 @@ typedef struct
 
 static const char *TAG = "MAIN";
 
+const uint32_t TIMER_TICKS_PER_SECOND = 1000000;
 const uint8_t BUTTON_NOT_PRESSED = 0;
 const uint8_t BUTTON_PRESSED = 1;
 const uint8_t LED_PIN = 2;
@@ -33,10 +43,12 @@ const uint8_t LED0_PIN = 4;
 const uint8_t LED1_PIN = 16;
 const uint8_t LED2_PIN = 17;
 const uint8_t LED3_PIN = 5;
-const uint8_t BUTTON0_PIN = 27;
-const uint8_t BUTTON1_PIN = 26;
-const uint8_t BUTTON2_PIN = 5;
-const uint8_t BUTTON3_PIN = 33;
+const uint8_t START_BUTTON_PIN = 13;
+const uint8_t STOP_BUTTON_PIN = 12;
+const uint8_t ACTION_BUTTON0_PIN = 27;
+const uint8_t ACTION_BUTTON1_PIN = 26;
+const uint8_t ACTION_BUTTON2_PIN = 25;
+const uint8_t ACTION_BUTTON3_PIN = 33;
 
 SemaphoreHandle_t process_buttons_semaphore;
 SemaphoreHandle_t button_data_mutex;
@@ -48,7 +60,7 @@ gptimer_handle_t process_buttons_timer = NULL;
 uint64_t start_count = 0;
 uint64_t end_count = 0;
 
-button buttons_array[NUM_BUTTONS];
+button game_buttons_array[NUM_BUTTONS];
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
@@ -117,21 +129,23 @@ void process_buttons_task(void *pvParameter)
             {
                 for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
                 {
-                    buttons_array[button_idx].current_input = gpio_get_level(buttons_array[button_idx].button_pin);
-                    int current_input = buttons_array[button_idx].current_input;
-                    int previous_input = buttons_array[button_idx].previous_input;
+                    game_buttons_array[button_idx].current_input = 
+                        gpio_get_level(game_buttons_array[button_idx].button_pin);
+
+                    int current_input = game_buttons_array[button_idx].current_input;
+                    int previous_input = game_buttons_array[button_idx].previous_input;
                     
                     if(previous_input == BUTTON_NOT_PRESSED && current_input == BUTTON_PRESSED)
                     {
                         ESP_LOGI(TAG, "Button %d was pressed\n", button_idx);
-                        buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
+                        game_buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
                     }
                     else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
                     {
                         ESP_LOGI(TAG, "Button %d was released\n", button_idx);
-                        buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
+                        game_buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
                     }
-                    buttons_array[button_idx].previous_input = current_input;
+                    game_buttons_array[button_idx].previous_input = current_input;
                 }
                 xSemaphoreGive(button_data_mutex);
             }
@@ -144,10 +158,12 @@ void initialize_gpio_pins()
     // Configure buttons as inputs
     gpio_config_t io_config_input = 
     {
-        .pin_bit_mask = (1ULL << BUTTON0_PIN) |
-                        (1ULL << BUTTON1_PIN) |
-                        (1ULL << BUTTON2_PIN) |
-                        (1ULL << BUTTON3_PIN),
+        .pin_bit_mask = (1ULL << START_BUTTON_PIN) |
+                        (1ULL << STOP_BUTTON_PIN) |
+                        (1ULL << ACTION_BUTTON0_PIN) |
+                        (1ULL << ACTION_BUTTON1_PIN) |
+                        (1ULL << ACTION_BUTTON2_PIN) |
+                        (1ULL << ACTION_BUTTON3_PIN),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
@@ -174,16 +190,18 @@ void initialize_gpio_pins()
 
 void initialize_buttons()
 {
-    buttons_array[0].button_pin = BUTTON0_PIN;
-    buttons_array[1].button_pin = BUTTON1_PIN;
-    buttons_array[2].button_pin = BUTTON2_PIN;
-    buttons_array[3].button_pin = BUTTON3_PIN;
+    game_buttons_array[0].button_pin = START_BUTTON_PIN;
+    game_buttons_array[1].button_pin = STOP_BUTTON_PIN;
+    game_buttons_array[2].button_pin = ACTION_BUTTON0_PIN;
+    game_buttons_array[3].button_pin = ACTION_BUTTON1_PIN;
+    game_buttons_array[4].button_pin = ACTION_BUTTON2_PIN;
+    game_buttons_array[5].button_pin = ACTION_BUTTON3_PIN;
 
     for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
     {
-        buttons_array[button_idx].current_input = 0;
-        buttons_array[button_idx].previous_input = 0;
-        buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
+        game_buttons_array[button_idx].current_input = 0;
+        game_buttons_array[button_idx].previous_input = 0;
+        game_buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
     }
 }
 
@@ -214,7 +232,7 @@ void initialize_timers()
     {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
         .direction = GPTIMER_COUNT_UP,
-        .resolution_hz = 1000000,
+        .resolution_hz = TIMER_TICKS_PER_SECOND,
     };
 
     // Set the configuration for the detect button timer
@@ -222,7 +240,7 @@ void initialize_timers()
     {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
         .direction = GPTIMER_COUNT_UP,
-        .resolution_hz = 1000000,
+        .resolution_hz = TIMER_TICKS_PER_SECOND,
     };
 
     // Set the callback function for the detect button timer
@@ -234,7 +252,7 @@ void initialize_timers()
     // Set the configuration for the detect button timer
     gptimer_alarm_config_t process_buttons_alarm_config = 
     {
-        .alarm_count = 50000,
+        .alarm_count = (uint64_t)(0.05 * TIMER_TICKS_PER_SECOND),
         .reload_count = 0,
         .flags.auto_reload_on_alarm = true,
     };
