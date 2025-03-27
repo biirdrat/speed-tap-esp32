@@ -21,7 +21,10 @@
 			"esp_log.h": "c",
 			"freertosconfig.h": "c",
 			"iosfwd": "c",
-			"xlocbuf": "c"
+			"xlocbuf": "c",
+			"atomic": "c",
+			"cstddef": "c",
+			"type_traits": "c"
 		}
 	}
 }

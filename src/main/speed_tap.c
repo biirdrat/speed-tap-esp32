@@ -61,6 +61,7 @@ uint64_t start_count = 0;
 uint64_t end_count = 0;
 
 button game_buttons_array[NUM_BUTTONS];
+game_state current_game_state = IDLE;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
@@ -74,7 +75,7 @@ void app_main(void)
 {
     // Print a starting message
     ESP_LOGI(TAG, "Main Program Running!\n");
-
+    
     initialize_gpio_pins();
 
     initialize_buttons();
@@ -112,6 +113,26 @@ void game_control_task(void *pvParameter)
     {
         if(xSemaphoreTake(button_data_mutex, portMAX_DELAY) == pdTRUE)
         {
+            switch(current_game_state)
+            {
+                case IDLE:
+                    if(game_buttons_array[0].state == BUTTON_WAS_PRESSED)
+                    {
+                        current_game_state = INTERMISSION;
+                        ESP_LOGI(TAG, "Game Started\n");
+                    }
+                    break;
+                case INTERMISSION:
+                    break;
+                case AWAITING_INPUT:
+                    break;
+                case TIMEOUT:
+                    break;
+                case GAME_OVER:
+                    break;
+                default:
+                    break;
+            }
             xSemaphoreGive(button_data_mutex);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -218,10 +239,13 @@ void initialize_lcd()
     
         // Put the cursor at the first position
         lcd_put_cur(0, 0);
-    
-        // Send a message to the LCD
         snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
         lcd_send_string(lcd_message_buffer);
+
+        lcd_put_cur(1, 0);
+        snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "world");
+        lcd_send_string(lcd_message_buffer);
+        lcd_clear_row(1);
 }
 
 void initialize_timers()

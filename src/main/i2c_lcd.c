@@ -105,6 +105,15 @@ void lcd_clear(void)
     usleep(5000);
 }
 
+void lcd_clear_row(int row)
+{
+    lcd_put_cur(row, 0);
+    for (int i = 0; i < 16; i++)
+    {
+        lcd_send_data(' ');
+    }
+}
+
 void lcd_put_cur(int row, int col)
 {
     switch (row)
