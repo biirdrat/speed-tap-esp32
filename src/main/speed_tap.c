@@ -13,7 +13,7 @@ typedef enum
 {
     IDLE = 0,
     INTERMISSION = 1,
-    AWAITING_INPUT = 2,
+    GAME_IN_PROGRESS = 2,
     TIMEOUT = 3,
     GAME_OVER = 4
 } game_state;
@@ -36,6 +36,9 @@ typedef struct
 static const char *TAG = "MAIN";
 
 const uint32_t TIMER_TICKS_PER_SECOND = 1000000;
+const uint8_t INTERMISSION_TIME_S = 5;
+const uint8_t TOP_ROW = 0;
+const uint8_t BOTTOM_ROW = 1;
 const uint8_t BUTTON_NOT_PRESSED = 0;
 const uint8_t BUTTON_PRESSED = 1;
 const uint8_t LED_PIN = 2;
@@ -51,9 +54,8 @@ const uint8_t ACTION_BUTTON2_PIN = 25;
 const uint8_t ACTION_BUTTON3_PIN = 33;
 
 SemaphoreHandle_t process_buttons_semaphore;
+SemaphoreHandle_t intermission_semaphore;
 SemaphoreHandle_t button_data_mutex;
-
-char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
 
 gptimer_handle_t program_timer = NULL;
 gptimer_handle_t process_buttons_timer = NULL;
@@ -62,9 +64,11 @@ uint64_t end_count = 0;
 
 button game_buttons_array[NUM_BUTTONS];
 game_state current_game_state = IDLE;
+uint8_t intermission_count = 0;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
+void intermission_task(void *pvParameter);
 void initialize_gpio_pins();
 void initialize_buttons();
 void initialize_lcd();
@@ -88,8 +92,9 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Main Program Finished!\n");
 
-    xTaskCreate(&game_control_task, "Game Control Task", 2048, NULL, 2, NULL);
     xTaskCreate(&process_buttons_task, "Process Buttons Task", 2048, NULL, 24, NULL);
+    xTaskCreate(&game_control_task, "Game Control Task", 2048, NULL, 23, NULL);
+    xTaskCreate(&intermission_task, "Intermission Task", 2048, NULL, 22, NULL);
 }
 
 static bool IRAM_ATTR process_buttons_timer_on_alarm(
@@ -118,13 +123,16 @@ void game_control_task(void *pvParameter)
                 case IDLE:
                     if(game_buttons_array[0].state == BUTTON_WAS_PRESSED)
                     {
+                        intermission_count = INTERMISSION_TIME_S;
                         current_game_state = INTERMISSION;
-                        ESP_LOGI(TAG, "Game Started\n");
+                        xSemaphoreGive(intermission_semaphore);
                     }
                     break;
                 case INTERMISSION:
                     break;
-                case AWAITING_INPUT:
+                case GAME_IN_PROGRESS:
+                    ESP_LOGI(TAG, "Game in progress\n");
+                    current_game_state = TIMEOUT;
                     break;
                 case TIMEOUT:
                     break;
@@ -171,6 +179,29 @@ void process_buttons_task(void *pvParameter)
                 xSemaphoreGive(button_data_mutex);
             }
         }
+    }
+}
+
+void intermission_task(void *pvParameter)
+{
+    while (1)
+    {
+        if(xSemaphoreTake(intermission_semaphore, portMAX_DELAY) == pdTRUE)
+        {
+            lcd_write_string(BOTTOM_ROW, "Game Starting: %i", (int)(intermission_count));
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            if(intermission_count != 0)
+            {
+                intermission_count--;
+                xSemaphoreGive(intermission_semaphore);
+            }
+            else
+            {
+                lcd_write_string(BOTTOM_ROW, "Game Started!");
+                current_game_state = GAME_IN_PROGRESS;
+            }
+        }
+        
     }
 }
 
@@ -237,15 +268,7 @@ void initialize_lcd()
         // Clear the LCD screen
         lcd_clear();
     
-        // Put the cursor at the first position
-        lcd_put_cur(0, 0);
-        snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "hello");
-        lcd_send_string(lcd_message_buffer);
-
-        lcd_put_cur(1, 0);
-        snprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, "world");
-        lcd_send_string(lcd_message_buffer);
-        lcd_clear_row(1);
+        lcd_write_string(TOP_ROW, "Speed Tap Game");
 }
 
 void initialize_timers()
@@ -300,6 +323,12 @@ void initialize_freertos_objects()
     if(process_buttons_semaphore == NULL)
     {
         ESP_LOGE(TAG, "Failed to create process_buttons_semaphore\n");
+    }
+
+    intermission_semaphore = xSemaphoreCreateBinary();
+    if(intermission_semaphore == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create intermission_semaphore\n");
     }
 
     button_data_mutex = xSemaphoreCreateMutex();

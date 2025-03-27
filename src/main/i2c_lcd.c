@@ -2,12 +2,26 @@
 
 #include "i2c_lcd.h"
 
+#define LCD_MESSAGE_BUFFER_SIZE 17
+#define I2C_MASTER_SCL_IO           GPIO_NUM_22
+#define I2C_MASTER_SDA_IO           GPIO_NUM_21
+#define I2C_MASTER_NUM              0
+#define I2C_MASTER_FREQ_HZ          400000
+#define I2C_MASTER_TX_BUF_DISABLE   0
+#define I2C_MASTER_RX_BUF_DISABLE   0
+#define I2C_MASTER_TIMEOUT_MS       1000
+#define I2C_NUM I2C_NUM_0
+
+#define LCD_I2C_ADDR 0x4E>>1
+
 static const char *TAG = "LCD";
 
 esp_err_t err;
 
 i2c_master_bus_handle_t i2c_bus_handle;
 i2c_master_dev_handle_t i2c_dev_handle;
+
+char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
 
 esp_err_t i2c_master_init(void)
 {
@@ -174,4 +188,17 @@ void lcd_init(void)
 void lcd_send_string(char *str)
 {
     while (*str) lcd_send_data(*str++);
+}
+
+void lcd_write_string(int row, const char *format, ...)
+{   
+    lcd_clear_row(row);
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, format, args);
+    va_end(args);
+
+    lcd_put_cur(row, 0);
+    lcd_send_string(lcd_message_buffer);
 }
