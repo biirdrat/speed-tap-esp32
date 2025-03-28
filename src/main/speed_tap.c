@@ -7,6 +7,7 @@
 #include "i2c_lcd.h"
 
 #define LCD_MESSAGE_BUFFER_SIZE 17
+#define NUM_LEDS 4
 #define NUM_BUTTONS 6
 
 typedef enum
@@ -62,14 +63,15 @@ gptimer_handle_t process_buttons_timer = NULL;
 uint64_t start_count = 0;
 uint64_t end_count = 0;
 
-button game_buttons_array[NUM_BUTTONS];
+uint8_t leds_array[NUM_LEDS] = {LED0_PIN, LED1_PIN, LED2_PIN, LED3_PIN};
+button buttons_array[NUM_BUTTONS];
 game_state current_game_state = IDLE;
 uint8_t intermission_count = 0;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
 void intermission_task(void *pvParameter);
-void initialize_gpio_pins();
+void initialize_leds();
 void initialize_buttons();
 void initialize_lcd();
 void initialize_timers();
@@ -80,7 +82,7 @@ void app_main(void)
     // Print a starting message
     ESP_LOGI(TAG, "Main Program Running!\n");
     
-    initialize_gpio_pins();
+    initialize_leds();
 
     initialize_buttons();
 
@@ -121,7 +123,7 @@ void game_control_task(void *pvParameter)
             switch(current_game_state)
             {
                 case IDLE:
-                    if(game_buttons_array[0].state == BUTTON_WAS_PRESSED)
+                    if(buttons_array[0].state == BUTTON_WAS_PRESSED)
                     {
                         intermission_count = INTERMISSION_TIME_S;
                         current_game_state = INTERMISSION;
@@ -158,23 +160,23 @@ void process_buttons_task(void *pvParameter)
             {
                 for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
                 {
-                    game_buttons_array[button_idx].current_input = 
-                        gpio_get_level(game_buttons_array[button_idx].button_pin);
+                    buttons_array[button_idx].current_input = 
+                        gpio_get_level(buttons_array[button_idx].button_pin);
 
-                    int current_input = game_buttons_array[button_idx].current_input;
-                    int previous_input = game_buttons_array[button_idx].previous_input;
+                    int current_input = buttons_array[button_idx].current_input;
+                    int previous_input = buttons_array[button_idx].previous_input;
                     
                     if(previous_input == BUTTON_NOT_PRESSED && current_input == BUTTON_PRESSED)
                     {
                         ESP_LOGI(TAG, "Button %d was pressed\n", button_idx);
-                        game_buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
+                        buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
                     }
                     else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
                     {
                         ESP_LOGI(TAG, "Button %d was released\n", button_idx);
-                        game_buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
+                        buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
                     }
-                    game_buttons_array[button_idx].previous_input = current_input;
+                    buttons_array[button_idx].previous_input = current_input;
                 }
                 xSemaphoreGive(button_data_mutex);
             }
@@ -205,7 +207,25 @@ void intermission_task(void *pvParameter)
     }
 }
 
-void initialize_gpio_pins()
+void initialize_leds()
+{
+    // Configure the LEDS GPIO as an output
+    gpio_config_t io_config_output = 
+    {
+        .pin_bit_mask = (1ULL << LED0_PIN) |
+                        (1ULL << LED1_PIN) |
+                        (1ULL << LED2_PIN) |
+                        (1ULL << LED3_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&io_config_output);
+}
+
+void initialize_buttons()
 {
     // Configure buttons as inputs
     gpio_config_t io_config_input = 
@@ -224,36 +244,18 @@ void initialize_gpio_pins()
 
     gpio_config(&io_config_input);
 
-    // Configure the LED GPIO as an output
-    gpio_config_t io_config_output = 
-    {
-        .pin_bit_mask = (1ULL << LED0_PIN) |
-                        (1ULL << LED1_PIN) |
-                        (1ULL << LED2_PIN) |
-                        (1ULL << LED3_PIN),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-
-    gpio_config(&io_config_output);
-}
-
-void initialize_buttons()
-{
-    game_buttons_array[0].button_pin = START_BUTTON_PIN;
-    game_buttons_array[1].button_pin = STOP_BUTTON_PIN;
-    game_buttons_array[2].button_pin = ACTION_BUTTON0_PIN;
-    game_buttons_array[3].button_pin = ACTION_BUTTON1_PIN;
-    game_buttons_array[4].button_pin = ACTION_BUTTON2_PIN;
-    game_buttons_array[5].button_pin = ACTION_BUTTON3_PIN;
+    buttons_array[0].button_pin = START_BUTTON_PIN;
+    buttons_array[1].button_pin = STOP_BUTTON_PIN;
+    buttons_array[2].button_pin = ACTION_BUTTON0_PIN;
+    buttons_array[3].button_pin = ACTION_BUTTON1_PIN;
+    buttons_array[4].button_pin = ACTION_BUTTON2_PIN;
+    buttons_array[5].button_pin = ACTION_BUTTON3_PIN;
 
     for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
     {
-        game_buttons_array[button_idx].current_input = 0;
-        game_buttons_array[button_idx].previous_input = 0;
-        game_buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
+        buttons_array[button_idx].current_input = 0;
+        buttons_array[button_idx].previous_input = 0;
+        buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
     }
 }
 
