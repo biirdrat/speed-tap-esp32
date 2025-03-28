@@ -223,6 +223,11 @@ void initialize_leds()
     };
 
     gpio_config(&io_config_output);
+
+    for(int led_idx = 0; led_idx < NUM_LEDS; led_idx++)
+    {
+        gpio_set_level(leds_array[led_idx], 0);
+    }
 }
 
 void initialize_buttons()
