@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "esp_random.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -9,6 +10,7 @@
 #define LCD_MESSAGE_BUFFER_SIZE 17
 #define NUM_LEDS 4
 #define NUM_BUTTONS 6
+#define NUM_ACTION_BUTTONS 4
 
 typedef enum
 {
@@ -37,7 +39,7 @@ typedef struct
 static const char *TAG = "MAIN";
 
 const uint32_t TIMER_TICKS_PER_SECOND = 1000000;
-const uint8_t INTERMISSION_TIME_S = 5;
+const uint8_t INTERMISSION_TIME_S = 1;
 const uint8_t TOP_ROW = 0;
 const uint8_t BOTTOM_ROW = 1;
 const uint8_t BUTTON_NOT_PRESSED = 0;
@@ -67,6 +69,7 @@ uint8_t leds_array[NUM_LEDS] = {LED0_PIN, LED1_PIN, LED2_PIN, LED3_PIN};
 button buttons_array[NUM_BUTTONS];
 game_state current_game_state = IDLE;
 uint8_t intermission_count = 0;
+uint8_t correct_button = 255;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
@@ -76,6 +79,7 @@ void initialize_buttons();
 void initialize_lcd();
 void initialize_timers();
 void initialize_freertos_objects();
+void generate_new_target();
 
 void app_main(void)
 {
@@ -200,6 +204,7 @@ void intermission_task(void *pvParameter)
             else
             {
                 lcd_write_string(BOTTOM_ROW, "Game Started!");
+                generate_new_target();
                 current_game_state = GAME_IN_PROGRESS;
             }
         }
@@ -342,5 +347,31 @@ void initialize_freertos_objects()
     if(button_data_mutex == NULL)
     {
         ESP_LOGE(TAG, "Failed to create button_data_mutex\n");
+    }
+}
+
+void generate_new_target()
+{   
+    uint8_t last_correct_button = correct_button;
+    uint8_t new_correct_button = 0;
+    do 
+    {
+        // Generate a random number between 2 and 5 (inclusive)
+        new_correct_button = (esp_random() % NUM_ACTION_BUTTONS) + 2;
+
+    // Make sure the new button is different from the last one
+    } while (new_correct_button == last_correct_button);
+
+    // Turn on the led for the new correct button
+    for(int led_idx = 0; led_idx < NUM_LEDS; led_idx++)
+    {
+        if( led_idx == (new_correct_button - 2))
+        {
+            gpio_set_level(leds_array[led_idx], 1);
+        }
+        else
+        {
+            gpio_set_level(leds_array[led_idx], 0);
+        }
     }
 }
