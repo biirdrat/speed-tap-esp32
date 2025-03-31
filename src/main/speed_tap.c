@@ -40,6 +40,7 @@ static const char *TAG = "MAIN";
 
 const uint32_t TIMER_TICKS_PER_SECOND = 1000000;
 const uint8_t INTERMISSION_TIME_S = 3;
+const uint8_t GAME_LIMIT_TIME_S = 10;
 const uint8_t TOP_ROW = 0;
 const uint8_t BOTTOM_ROW = 1;
 const uint8_t BUTTON_NOT_PRESSED = 0;
@@ -63,8 +64,8 @@ SemaphoreHandle_t game_state_mutex;
 
 gptimer_handle_t program_timer = NULL;
 gptimer_handle_t process_buttons_timer = NULL;
-uint64_t start_count = 0;
-uint64_t end_count = 0;
+uint64_t timer_start_count = 0;
+uint64_t timer_current_count = 0;
 
 uint8_t leds_array[NUM_LEDS] = {LED0_PIN, LED1_PIN, LED2_PIN, LED3_PIN};
 button buttons_array[NUM_BUTTONS];
@@ -72,6 +73,7 @@ game_state current_game_state = IDLE;
 uint8_t intermission_count = 0;
 uint8_t correct_button = 255;
 uint16_t current_score = 0;
+uint16_t high_score = 0;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
@@ -85,6 +87,7 @@ void turn_off_all_leds();
 void generate_new_target();
 void update_lcd_score();
 void start_game();
+void reset_to_idle_state();
 
 void app_main(void)
 {
@@ -100,6 +103,8 @@ void app_main(void)
     initialize_timers();
 
     initialize_freertos_objects();
+
+    reset_to_idle_state();
 
     ESP_LOGI(TAG, "Main Program Finished!\n");
 
@@ -149,6 +154,18 @@ void game_control_task(void *pvParameter)
 
                     // Game is in progress
                     case GAME_IN_PROGRESS:
+                        
+                        // Get the current timer count
+                        gptimer_get_raw_count(program_timer, &timer_current_count);
+
+                        // Calculate elapsed time in seconds
+                        float elapsed_time_s = (timer_current_count - timer_start_count) / (float)TIMER_TICKS_PER_SECOND;
+                        if(elapsed_time_s >= GAME_LIMIT_TIME_S)
+                        {
+                            current_game_state = GAME_OVER;
+                            break;
+                        }
+
                         // Check if stop button was pressed
                         if(buttons_array[1].state == BUTTON_WAS_PRESSED)
                         {
@@ -206,6 +223,11 @@ void game_control_task(void *pvParameter)
                     
                     // Game is finished
                     case GAME_OVER:
+                        if(current_score > high_score)
+                        {
+                            high_score = current_score;
+                            reset_to_idle_state();
+                        }
                         break;
 
                     default:
@@ -348,9 +370,7 @@ void initialize_lcd()
         lcd_init();
     
         // Clear the LCD screen
-        lcd_clear();
-    
-        lcd_write_string(TOP_ROW, "Speed Tap Game");
+        lcd_clear();    
 }
 
 void initialize_timers()
@@ -470,8 +490,23 @@ void update_lcd_score()
 
 void start_game()
 {
+    // Write to the LCD that the game has started
     lcd_write_string(TOP_ROW, "Game Started!");
+
+    // Get game start count
+    gptimer_get_raw_count(program_timer, &timer_start_count);
+
+    // Reset score to 0
     current_score = 0;
     update_lcd_score();
+
+    // Generate first correct button
     generate_new_target();
+}
+
+void reset_to_idle_state()
+{
+    turn_off_all_leds();
+    lcd_write_string(TOP_ROW, "Speed Tap Game");
+    lcd_write_string(BOTTOM_ROW, "High Score: %i", (int)(high_score));
 }
