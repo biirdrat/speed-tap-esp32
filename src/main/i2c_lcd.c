@@ -2,29 +2,65 @@
 
 #include "i2c_lcd.h"
 
-esp_err_t err;
+#define LCD_MESSAGE_BUFFER_SIZE 17
+#define I2C_MASTER_SCL_IO           GPIO_NUM_22
+#define I2C_MASTER_SDA_IO           GPIO_NUM_21
+#define I2C_MASTER_NUM              0
+#define I2C_MASTER_FREQ_HZ          400000
+#define I2C_MASTER_TX_BUF_DISABLE   0
+#define I2C_MASTER_RX_BUF_DISABLE   0
+#define I2C_MASTER_TIMEOUT_MS       1000
+#define I2C_NUM I2C_NUM_0
+
+#define LCD_I2C_ADDR 0x4E>>1
 
 static const char *TAG = "LCD";
 
+esp_err_t err;
+
+i2c_master_bus_handle_t i2c_bus_handle;
+i2c_master_dev_handle_t i2c_dev_handle;
+
+char lcd_message_buffer[LCD_MESSAGE_BUFFER_SIZE];
+
 esp_err_t i2c_master_init(void)
 {
-    int i2c_master_port = I2C_MASTER_NUM;
-
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = I2C_MASTER_SDA_IO,
+    i2c_master_bus_config_t i2c_master_config =
+    {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM,
         .scl_io_num = I2C_MASTER_SCL_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_MASTER_FREQ_HZ,
+        .sda_io_num = I2C_MASTER_SDA_IO,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+    
+
+    err = i2c_new_master_bus(&i2c_master_config, &i2c_bus_handle);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGI(TAG, "Error configuring I2C Master: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    i2c_device_config_t dev_cfg =
+    {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = LCD_I2C_ADDR,
+        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
     };
 
-    i2c_param_config(i2c_master_port, &conf);
+    err = i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &i2c_dev_handle);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGI(TAG, "Error configuring I2C Master: %s", esp_err_to_name(err));
+        return err;
+    }
 
-    return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
+    return ESP_OK;
 }
 
-void lcd_send_cmd (char cmd)
+void lcd_send_cmd(char cmd)
 {
     char data_u, data_l;
     uint8_t data_t[4];
@@ -43,11 +79,15 @@ void lcd_send_cmd (char cmd)
     // en=0, rs=0
     data_t[3] = data_l | 0x08;
     
-    err = i2c_master_write_to_device(I2C_NUM, SLAVE_ADDRESS_LCD, data_t, 4, 1000);
-    if (err != 0) ESP_LOGI(TAG, "Error in sending command");
+    // Send command using new I2C API
+    err = i2c_master_transmit(i2c_dev_handle, data_t, sizeof(data_t), -1);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGI(TAG, "Error in sending command: %s", esp_err_to_name(err));
+    }
 }
 
-void lcd_send_data (char data)
+void lcd_send_data(char data)
 {
     char data_u, data_l;
     uint8_t data_t[4];
@@ -66,14 +106,26 @@ void lcd_send_data (char data)
     // en=0, rs=0
     data_t[3] = data_l | 0x09;
     
-    err = i2c_master_write_to_device(I2C_NUM, SLAVE_ADDRESS_LCD, data_t, 4, 1000);
-    if (err != 0) ESP_LOGI(TAG, "Error in sending data");
+    err = i2c_master_transmit(i2c_dev_handle, data_t, sizeof(data_t), -1);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGI(TAG, "Error in sending command: %s", esp_err_to_name(err));
+    }
 }
 
-void lcd_clear (void)
+void lcd_clear(void)
 {
     lcd_send_cmd(0x01);
     usleep(5000);
+}
+
+void lcd_clear_row(int row)
+{
+    lcd_put_cur(row, 0);
+    for (int i = 0; i < 16; i++)
+    {
+        lcd_send_data(' ');
+    }
 }
 
 void lcd_put_cur(int row, int col)
@@ -91,7 +143,7 @@ void lcd_put_cur(int row, int col)
     lcd_send_cmd(col);
 }
 
-void lcd_init (void)
+void lcd_init(void)
 {
     // 4 bit initialisation
     // wait for >40ms
@@ -133,7 +185,20 @@ void lcd_init (void)
     usleep(1000);
 }
 
-void lcd_send_string (char *str)
+void lcd_send_string(char *str)
 {
     while (*str) lcd_send_data(*str++);
+}
+
+void lcd_write_string(int row, const char *format, ...)
+{   
+    lcd_clear_row(row);
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(lcd_message_buffer, LCD_MESSAGE_BUFFER_SIZE, format, args);
+    va_end(args);
+
+    lcd_put_cur(row, 0);
+    lcd_send_string(lcd_message_buffer);
 }
