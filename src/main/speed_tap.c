@@ -39,7 +39,7 @@ typedef struct
 static const char *TAG = "MAIN";
 
 const uint32_t TIMER_TICKS_PER_SECOND = 1000000;
-const uint8_t INTERMISSION_TIME_S = 1;
+const uint8_t INTERMISSION_TIME_S = 3;
 const uint8_t TOP_ROW = 0;
 const uint8_t BOTTOM_ROW = 1;
 const uint8_t BUTTON_NOT_PRESSED = 0;
@@ -59,6 +59,7 @@ const uint8_t ACTION_BUTTON3_PIN = 33;
 SemaphoreHandle_t process_buttons_semaphore;
 SemaphoreHandle_t intermission_semaphore;
 SemaphoreHandle_t button_data_mutex;
+SemaphoreHandle_t game_state_mutex;
 
 gptimer_handle_t program_timer = NULL;
 gptimer_handle_t process_buttons_timer = NULL;
@@ -70,6 +71,7 @@ button buttons_array[NUM_BUTTONS];
 game_state current_game_state = IDLE;
 uint8_t intermission_count = 0;
 uint8_t correct_button = 255;
+uint16_t current_score = 0;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
@@ -79,7 +81,10 @@ void initialize_buttons();
 void initialize_lcd();
 void initialize_timers();
 void initialize_freertos_objects();
+void turn_off_all_leds();
 void generate_new_target();
+void update_lcd_score();
+void start_game();
 
 void app_main(void)
 {
@@ -124,30 +129,91 @@ void game_control_task(void *pvParameter)
     {
         if(xSemaphoreTake(button_data_mutex, portMAX_DELAY) == pdTRUE)
         {
-            switch(current_game_state)
+            if(xSemaphoreTake(game_state_mutex, portMAX_DELAY) == pdTRUE)
             {
-                case IDLE:
-                    if(buttons_array[0].state == BUTTON_WAS_PRESSED)
-                    {
-                        intermission_count = INTERMISSION_TIME_S;
-                        current_game_state = INTERMISSION;
-                        xSemaphoreGive(intermission_semaphore);
-                    }
-                    break;
-                case INTERMISSION:
-                    break;
-                case GAME_IN_PROGRESS:
-                    ESP_LOGI(TAG, "Game in progress\n");
-                    current_game_state = TIMEOUT;
-                    break;
-                case TIMEOUT:
-                    break;
-                case GAME_OVER:
-                    break;
-                default:
-                    break;
+                switch(current_game_state)
+                {   
+                    // Waiting for the start button to be pressed
+                    case IDLE:
+                        if(buttons_array[0].state == BUTTON_WAS_PRESSED)
+                        {
+                            intermission_count = INTERMISSION_TIME_S;
+                            current_game_state = INTERMISSION;
+                            xSemaphoreGive(intermission_semaphore);
+                        }
+                        break;
+                    
+                    // Game starting
+                    case INTERMISSION:
+                        break;
+
+                    // Game is in progress
+                    case GAME_IN_PROGRESS:
+                        // Check if stop button was pressed
+                        if(buttons_array[1].state == BUTTON_WAS_PRESSED)
+                        {
+                            buttons_array[1].state = BUTTON_WAITING_RESET;
+                            current_game_state = IDLE;
+                        }
+                        else
+                        {
+                            uint8_t num_buttons_pressed = 0;
+                            bool correct_button_pressed = false;
+                            for(int button_idx = NUM_BUTTONS - NUM_ACTION_BUTTONS; button_idx < NUM_BUTTONS; button_idx++)
+                            {
+                                // Check if the button was pressed
+                                if(buttons_array[button_idx].state == BUTTON_WAS_PRESSED)
+                                {
+                                    // Increment the number of buttons pressed
+                                    num_buttons_pressed++;
+                                    
+                                    // Check if the button pressed is the correct button
+                                    if(button_idx == correct_button)
+                                    {
+                                        correct_button_pressed = true;
+                                        ESP_LOGI(TAG, "Correct button %d was pressed\n", button_idx);
+                                    }
+
+                                    // Make sure the button is released by user before next check
+                                    buttons_array[button_idx].state = BUTTON_WAITING_RESET;
+                                }
+                            }
+                            
+                            // User did not make an input
+                            if(num_buttons_pressed == 0)
+                            {
+                                break;
+                            }
+                            // User selected single correct button
+                            else if(num_buttons_pressed == 1 && correct_button_pressed)
+                            {
+                                current_score++;
+                                update_lcd_score();
+                                generate_new_target();
+                            }
+                            // User failed to select correct button
+                            else
+                            {
+                                turn_off_all_leds();
+                                current_game_state = TIMEOUT;
+                            }
+                        }
+                        break;
+                    
+                    // User pressed wrong button
+                    case TIMEOUT:
+                        break;
+                    
+                    // Game is finished
+                    case GAME_OVER:
+                        break;
+
+                    default:
+                        break;
+                }
+                xSemaphoreGive(game_state_mutex);
+                xSemaphoreGive(button_data_mutex);
             }
-            xSemaphoreGive(button_data_mutex);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -177,7 +243,6 @@ void process_buttons_task(void *pvParameter)
                     }
                     else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
                     {
-                        ESP_LOGI(TAG, "Button %d was released\n", button_idx);
                         buttons_array[button_idx].state = BUTTON_WAS_RELEASED;
                     }
                     buttons_array[button_idx].previous_input = current_input;
@@ -196,19 +261,24 @@ void intermission_task(void *pvParameter)
         {
             lcd_write_string(BOTTOM_ROW, "Game Starting: %i", (int)(intermission_count));
             vTaskDelay(pdMS_TO_TICKS(1000));
+
+            // Decrement intermission count until it reaches 0
             if(intermission_count != 0)
             {
                 intermission_count--;
                 xSemaphoreGive(intermission_semaphore);
             }
+            // Exit intermission and start the game
             else
             {
-                lcd_write_string(BOTTOM_ROW, "Game Started!");
-                generate_new_target();
-                current_game_state = GAME_IN_PROGRESS;
+                start_game();
+                if(xSemaphoreTake(game_state_mutex, portMAX_DELAY) == pdTRUE)
+                {
+                    current_game_state = GAME_IN_PROGRESS;
+                    xSemaphoreGive(game_state_mutex);
+                }
             }
         }
-        
     }
 }
 
@@ -348,6 +418,20 @@ void initialize_freertos_objects()
     {
         ESP_LOGE(TAG, "Failed to create button_data_mutex\n");
     }
+
+    game_state_mutex = xSemaphoreCreateMutex();
+    if(game_state_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create game_state_mutex\n");
+    }
+}
+
+void turn_off_all_leds()
+{
+    for(int led_idx = 0; led_idx < NUM_LEDS; led_idx++)
+    {
+        gpio_set_level(leds_array[led_idx], 0);
+    }
 }
 
 void generate_new_target()
@@ -362,6 +446,9 @@ void generate_new_target()
     // Make sure the new button is different from the last one
     } while (new_correct_button == last_correct_button);
 
+    // Update the correct button
+    correct_button = new_correct_button;
+
     // Turn on the led for the new correct button
     for(int led_idx = 0; led_idx < NUM_LEDS; led_idx++)
     {
@@ -374,4 +461,17 @@ void generate_new_target()
             gpio_set_level(leds_array[led_idx], 0);
         }
     }
+}
+
+void update_lcd_score()
+{
+    lcd_write_string(BOTTOM_ROW, "Score: %i", (int)(current_score)); 
+}
+
+void start_game()
+{
+    lcd_write_string(TOP_ROW, "Game Started!");
+    current_score = 0;
+    update_lcd_score();
+    generate_new_target();
 }
