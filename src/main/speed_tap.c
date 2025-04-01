@@ -40,7 +40,8 @@ static const char *TAG = "MAIN";
 
 const uint32_t TIMER_TICKS_PER_SECOND = 1000000;
 const uint8_t INTERMISSION_TIME_S = 3;
-const uint8_t GAME_LIMIT_TIME_S = 10;
+const uint8_t GAME_LIMIT_TIME_S = 60;
+const uint16_t TIMEOUT_TIME_MS = 1000;
 const uint8_t TOP_ROW = 0;
 const uint8_t BOTTOM_ROW = 1;
 const uint8_t BUTTON_NOT_PRESSED = 0;
@@ -59,6 +60,8 @@ const uint8_t ACTION_BUTTON3_PIN = 33;
 
 SemaphoreHandle_t process_buttons_semaphore;
 SemaphoreHandle_t intermission_semaphore;
+SemaphoreHandle_t game_timer_semaphore;
+SemaphoreHandle_t timeout_semaphore;
 SemaphoreHandle_t button_data_mutex;
 SemaphoreHandle_t game_state_mutex;
 
@@ -74,10 +77,13 @@ uint8_t intermission_count = 0;
 uint8_t correct_button = 255;
 uint16_t current_score = 0;
 uint16_t high_score = 0;
+uint8_t game_time_s = 60;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
 void intermission_task(void *pvParameter);
+void game_timer_task(void *pvParameter);
+void timeout_task(void *pvParameter);
 void initialize_leds();
 void initialize_buttons();
 void initialize_lcd();
@@ -111,6 +117,8 @@ void app_main(void)
     xTaskCreate(&process_buttons_task, "Process Buttons Task", 2048, NULL, 24, NULL);
     xTaskCreate(&game_control_task, "Game Control Task", 2048, NULL, 23, NULL);
     xTaskCreate(&intermission_task, "Intermission Task", 2048, NULL, 22, NULL);
+    xTaskCreate(&game_timer_task, "Game Timer Task", 2048, NULL, 21, NULL);
+    xTaskCreate(&timeout_task, "Timeout Task", 2048, NULL, 20, NULL);
 }
 
 static bool IRAM_ATTR process_buttons_timer_on_alarm(
@@ -154,28 +162,19 @@ void game_control_task(void *pvParameter)
 
                     // Game is in progress
                     case GAME_IN_PROGRESS:
-                        
-                        // Get the current timer count
-                        gptimer_get_raw_count(program_timer, &timer_current_count);
-
-                        // Calculate elapsed time in seconds
-                        float elapsed_time_s = (timer_current_count - timer_start_count) / (float)TIMER_TICKS_PER_SECOND;
-                        if(elapsed_time_s >= GAME_LIMIT_TIME_S)
-                        {
-                            current_game_state = GAME_OVER;
-                            break;
-                        }
 
                         // Check if stop button was pressed
                         if(buttons_array[1].state == BUTTON_WAS_PRESSED)
                         {
                             buttons_array[1].state = BUTTON_WAITING_RESET;
-                            current_game_state = IDLE;
+                            current_game_state = GAME_OVER;
                         }
                         else
                         {
                             uint8_t num_buttons_pressed = 0;
                             bool correct_button_pressed = false;
+
+                            // Check if any of the action buttons were pressed
                             for(int button_idx = NUM_BUTTONS - NUM_ACTION_BUTTONS; button_idx < NUM_BUTTONS; button_idx++)
                             {
                                 // Check if the button was pressed
@@ -211,8 +210,8 @@ void game_control_task(void *pvParameter)
                             // User failed to select correct button
                             else
                             {
-                                turn_off_all_leds();
                                 current_game_state = TIMEOUT;
+                                xSemaphoreGive(timeout_semaphore);
                             }
                         }
                         break;
@@ -298,7 +297,68 @@ void intermission_task(void *pvParameter)
                 {
                     current_game_state = GAME_IN_PROGRESS;
                     xSemaphoreGive(game_state_mutex);
+                    xSemaphoreGive(game_timer_semaphore);
                 }
+            }
+        }
+    }
+}
+
+void game_timer_task(void *pvParameter)
+{
+    while (1)
+    {
+        if(xSemaphoreTake(game_timer_semaphore, portMAX_DELAY) == pdTRUE)
+        {
+            if(xSemaphoreTake(game_state_mutex, portMAX_DELAY) == pdTRUE)
+            {
+                if(current_game_state == GAME_IN_PROGRESS)
+                {
+                    lcd_write_string(TOP_ROW, "TIME LEFT: %i", (int)(game_time_s));
+                }
+                xSemaphoreGive(game_state_mutex);
+            }
+
+            // Count down every second
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            game_time_s--;
+            if(xSemaphoreTake(game_state_mutex, portMAX_DELAY) == pdTRUE)
+            {
+                if(game_time_s != 0 && current_game_state != GAME_OVER)
+                {
+                    xSemaphoreGive(game_timer_semaphore);
+                }
+                else
+                {
+                    current_game_state = GAME_OVER;
+                }
+                xSemaphoreGive(game_state_mutex);
+            }
+        }
+    }
+}
+
+
+void timeout_task(void *pvParameter)
+{
+    while (1)
+    {
+        if(xSemaphoreTake(timeout_semaphore, portMAX_DELAY) == pdTRUE)
+        {
+            // Disable game state
+            turn_off_all_leds();
+            lcd_write_string(TOP_ROW, "TIMEOUT!");
+
+            // Wait for the timeout time
+            vTaskDelay(pdMS_TO_TICKS(TIMEOUT_TIME_MS));
+
+            // Unpause game state and generate new correct button
+            lcd_write_string(TOP_ROW, "TIME LEFT: %i", (int)(game_time_s));
+            generate_new_target();
+            if(xSemaphoreTake(game_state_mutex, portMAX_DELAY) == pdTRUE)
+            {
+                current_game_state = GAME_IN_PROGRESS;
+                xSemaphoreGive(game_state_mutex);
             }
         }
     }
@@ -433,6 +493,18 @@ void initialize_freertos_objects()
         ESP_LOGE(TAG, "Failed to create intermission_semaphore\n");
     }
 
+    game_timer_semaphore = xSemaphoreCreateBinary();
+    if(game_timer_semaphore == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create game_timer_semaphore\n");
+    }
+
+    timeout_semaphore = xSemaphoreCreateBinary();
+    if(timeout_semaphore == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create timeout_semaphore\n");
+    }
+
     button_data_mutex = xSemaphoreCreateMutex();
     if(button_data_mutex == NULL)
     {
@@ -490,11 +562,8 @@ void update_lcd_score()
 
 void start_game()
 {
-    // Write to the LCD that the game has started
-    lcd_write_string(TOP_ROW, "Game Started!");
-
-    // Get game start count
-    gptimer_get_raw_count(program_timer, &timer_start_count);
+    // Reset game time
+    game_time_s = GAME_LIMIT_TIME_S;
 
     // Reset score to 0
     current_score = 0;
