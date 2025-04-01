@@ -116,8 +116,6 @@ void app_main(void)
 
     reset_to_idle_state();
 
-    ESP_LOGI(TAG, "Main Program Finished!\n");
-
     xTaskCreate(&process_buttons_task, "Process Buttons Task", 2048, NULL, 24, NULL);
     xTaskCreate(&game_control_task, "Game Control Task", 2048, NULL, 23, NULL);
     xTaskCreate(&intermission_task, "Intermission Task", 2048, NULL, 22, NULL);
@@ -192,7 +190,6 @@ void game_control_task(void *pvParameter)
                                     if(button_idx == correct_button)
                                     {
                                         correct_button_pressed = true;
-                                        ESP_LOGI(TAG, "Correct button %d was pressed\n", button_idx);
                                     }
 
                                     // Make sure the button is released by user before next check
@@ -266,7 +263,6 @@ void process_buttons_task(void *pvParameter)
                     
                     if(previous_input == BUTTON_NOT_PRESSED && current_input == BUTTON_PRESSED)
                     {
-                        ESP_LOGI(TAG, "Button %d was pressed\n", button_idx);
                         buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
                     }
                     else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
