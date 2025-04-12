@@ -5,12 +5,21 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/gptimer.h"
+#include "driver/ledc.h"
 #include "i2c_lcd.h"
 
 #define LCD_MESSAGE_BUFFER_SIZE 17
 #define NUM_LEDS 4
 #define NUM_BUTTONS 6
 #define NUM_ACTION_BUTTONS 4
+
+#define BUZZER_LEDC_TIMER LEDC_TIMER_0
+#define BUZZER_LEDC_MODE LEDC_LOW_SPEED_MODE
+#define BUZZER_OUTPUT_PIN (23)
+#define BUZZER_LEDC_CHANNEL LEDC_CHANNEL_0
+#define BUZZER_LEDC_DUTY_RES LEDC_TIMER_13_BIT
+#define BUZZER_LEDC_DUTY (4096)
+#define BUZZER_LEDC_FREQUENCY (2093)
 
 typedef enum
 {
@@ -61,6 +70,7 @@ const uint8_t ACTION_BUTTON2_PIN = 25;
 const uint8_t ACTION_BUTTON3_PIN = 33;
 
 SemaphoreHandle_t process_buttons_semaphore;
+SemaphoreHandle_t buzzer_semaphore;
 SemaphoreHandle_t intermission_semaphore;
 SemaphoreHandle_t game_timer_semaphore;
 SemaphoreHandle_t timeout_semaphore;
@@ -84,6 +94,7 @@ uint8_t game_time_s = 60;
 
 void game_control_task(void *pvParameter);
 void process_buttons_task(void *pvParameter);
+void play_buzzer_task(void *pvParameter);
 void intermission_task(void *pvParameter);
 void game_timer_task(void *pvParameter);
 void timeout_task(void *pvParameter);
@@ -92,6 +103,7 @@ void initialize_leds();
 void initialize_buttons();
 void initialize_lcd();
 void initialize_timers();
+void initialize_buzzer();
 void initialize_freertos_objects();
 void turn_off_all_leds();
 void generate_new_target();
@@ -101,7 +113,7 @@ void reset_to_idle_state();
 
 void app_main(void)
 {
-    vTaskDelay(pdMS_TO_TICKS(1500));
+    vTaskDelay(pdMS_TO_TICKS(200));
     
     // Print a starting message
     ESP_LOGI(TAG, "Main Program Running!\n");
@@ -114,6 +126,8 @@ void app_main(void)
 
     initialize_timers();
 
+    initialize_buzzer();
+
     initialize_freertos_objects();
 
     reset_to_idle_state();
@@ -124,6 +138,7 @@ void app_main(void)
     xTaskCreate(&game_timer_task, "Game Timer Task", 2048, NULL, 21, NULL);
     xTaskCreate(&timeout_task, "Timeout Task", 2048, NULL, 20, NULL);
     xTaskCreate(&game_cleanup_task, "Game Cleanup Task", 2048, NULL, 19, NULL);
+    xTaskCreate(&play_buzzer_task, "Play Buzzer Task", 2048, NULL, 1, NULL);
 }
 
 static bool IRAM_ATTR process_buttons_timer_on_alarm(
@@ -255,6 +270,7 @@ void process_buttons_task(void *pvParameter)
         {
             if(xSemaphoreTake(button_data_mutex, portMAX_DELAY) == pdTRUE)
             {
+                bool any_button_pressed = false;
                 for(int button_idx = 0; button_idx < NUM_BUTTONS; button_idx++)
                 {
                     buttons_array[button_idx].current_input = 
@@ -266,6 +282,7 @@ void process_buttons_task(void *pvParameter)
                     if(previous_input == BUTTON_NOT_PRESSED && current_input == BUTTON_PRESSED)
                     {
                         buttons_array[button_idx].state = BUTTON_WAS_PRESSED;
+                        any_button_pressed = true;
                     }
                     else if(previous_input == BUTTON_PRESSED && current_input == BUTTON_NOT_PRESSED)
                     {
@@ -273,8 +290,32 @@ void process_buttons_task(void *pvParameter)
                     }
                     buttons_array[button_idx].previous_input = current_input;
                 }
+
+                // Play buzzer sound if any button was pressed
+                if(any_button_pressed)
+                {
+                    xSemaphoreGive(buzzer_semaphore);
+                }
+
                 xSemaphoreGive(button_data_mutex);
             }
+        }
+    }
+}
+
+void play_buzzer_task(void *pvParameter)
+{
+    while (1)
+    {
+        if(xSemaphoreTake(buzzer_semaphore, portMAX_DELAY) == pdTRUE)
+        {
+            // Update duty cycle
+            ESP_ERROR_CHECK(ledc_set_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL, BUZZER_LEDC_DUTY));
+            ESP_ERROR_CHECK(ledc_update_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL));
+            vTaskDelay(pdMS_TO_TICKS(75));
+            // Turn off buzzer
+            ESP_ERROR_CHECK(ledc_set_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL, 0));
+            ESP_ERROR_CHECK(ledc_update_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL));
         }
     }
 }
@@ -510,12 +551,43 @@ void initialize_timers()
     ESP_ERROR_CHECK(gptimer_start(process_buttons_timer));
 }
 
+void initialize_buzzer()
+{
+    // Prepare and then apply the LEDC PWM timer configuration
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = BUZZER_LEDC_MODE,
+        .duty_resolution  = BUZZER_LEDC_DUTY_RES,
+        .timer_num        = BUZZER_LEDC_TIMER,
+        .freq_hz          = BUZZER_LEDC_FREQUENCY,
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and then apply the LEDC PWM channel configuration
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode     = BUZZER_LEDC_MODE,
+        .channel        = BUZZER_LEDC_CHANNEL,
+        .timer_sel      = BUZZER_LEDC_TIMER,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = BUZZER_OUTPUT_PIN,
+        .duty           = 0,
+        .hpoint         = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+}
+
 void initialize_freertos_objects()
 {
     process_buttons_semaphore = xSemaphoreCreateBinary();
     if(process_buttons_semaphore == NULL)
     {
         ESP_LOGE(TAG, "Failed to create process_buttons_semaphore\n");
+    }
+
+    buzzer_semaphore = xSemaphoreCreateBinary();
+    if(buzzer_semaphore == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create buzzer_semaphore\n");
     }
 
     intermission_semaphore = xSemaphoreCreateBinary();
