@@ -101,6 +101,8 @@ void reset_to_idle_state();
 
 void app_main(void)
 {
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    
     // Print a starting message
     ESP_LOGI(TAG, "Main Program Running!\n");
     
