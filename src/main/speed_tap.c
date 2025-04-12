@@ -294,7 +294,6 @@ void process_buttons_task(void *pvParameter)
                 // Play buzzer sound if any button was pressed
                 if(any_button_pressed)
                 {
-
                     xSemaphoreGive(buzzer_semaphore);
                 }
 
