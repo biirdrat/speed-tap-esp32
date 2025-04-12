@@ -112,9 +112,7 @@ void start_game();
 void reset_to_idle_state();
 
 void app_main(void)
-{
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    
+{    
     // Print a starting message
     ESP_LOGI(TAG, "Main Program Running!\n");
     
@@ -312,7 +310,7 @@ void play_buzzer_task(void *pvParameter)
             // Update duty cycle
             ESP_ERROR_CHECK(ledc_set_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL, BUZZER_LEDC_DUTY));
             ESP_ERROR_CHECK(ledc_update_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL));
-            vTaskDelay(pdMS_TO_TICKS(50));
+            vTaskDelay(pdMS_TO_TICKS(75));
             // Turn off buzzer
             ESP_ERROR_CHECK(ledc_set_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL, 0));
             ESP_ERROR_CHECK(ledc_update_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL));
