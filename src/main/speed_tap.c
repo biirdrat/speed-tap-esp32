@@ -5,12 +5,21 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/gptimer.h"
+#include "driver/ledc.h"
 #include "i2c_lcd.h"
 
 #define LCD_MESSAGE_BUFFER_SIZE 17
 #define NUM_LEDS 4
 #define NUM_BUTTONS 6
 #define NUM_ACTION_BUTTONS 4
+
+#define BUZZER_LEDC_TIMER LEDC_TIMER_0
+#define BUZZER_LEDC_MODE LEDC_LOW_SPEED_MODE
+#define BUZZER_OUTPUT_PIN (18)
+#define BUZZER_LEDC_CHANNEL LEDC_CHANNEL_0
+#define BUZZER_LEDC_DUTY_RES LEDC_TIMER_13_BIT
+#define BUZZER_LEDC_DUTY (4096)
+#define BUZZER_LEDC_FREQUENCY (2093)
 
 typedef enum
 {
@@ -92,6 +101,7 @@ void initialize_leds();
 void initialize_buttons();
 void initialize_lcd();
 void initialize_timers();
+void initialize_buzzer();
 void initialize_freertos_objects();
 void turn_off_all_leds();
 void generate_new_target();
@@ -113,6 +123,8 @@ void app_main(void)
     initialize_lcd();
 
     initialize_timers();
+
+    initialize_buzzer();
 
     initialize_freertos_objects();
 
@@ -508,6 +520,31 @@ void initialize_timers()
     ESP_ERROR_CHECK(gptimer_set_alarm_action(process_buttons_timer, &process_buttons_alarm_config));
     ESP_ERROR_CHECK(gptimer_enable(process_buttons_timer));
     ESP_ERROR_CHECK(gptimer_start(process_buttons_timer));
+}
+
+void initialize_buzzer()
+{
+    // Prepare and then apply the LEDC PWM timer configuration
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = BUZZER_LEDC_MODE,
+        .duty_resolution  = BUZZER_LEDC_DUTY_RES,
+        .timer_num        = BUZZER_LEDC_TIMER,
+        .freq_hz          = BUZZER_LEDC_FREQUENCY,
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and then apply the LEDC PWM channel configuration
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode     = BUZZER_LEDC_MODE,
+        .channel        = BUZZER_LEDC_CHANNEL,
+        .timer_sel      = BUZZER_LEDC_TIMER,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = BUZZER_OUTPUT_PIN,
+        .duty           = BUZZER_LEDC_DUTY,
+        .hpoint         = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 }
 
 void initialize_freertos_objects()
