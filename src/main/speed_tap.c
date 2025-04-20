@@ -414,8 +414,8 @@ void timeout_task(void *pvParameter)
                     lcd_write_string(TOP_ROW, "TIME LEFT: %i", (int)(game_time_s));
                     generate_new_target();
                     current_game_state = GAME_IN_PROGRESS;
-                    xSemaphoreGive(game_state_mutex);
                 }
+                xSemaphoreGive(game_state_mutex);
             }
         }
     }
