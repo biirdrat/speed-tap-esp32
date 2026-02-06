@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "esp_random.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -99,6 +101,9 @@ void intermission_task(void *pvParameter);
 void game_timer_task(void *pvParameter);
 void timeout_task(void *pvParameter);
 void game_cleanup_task(void *pvParameter);
+void initialize_nvs();
+esp_err_t nvs_set_highscore(uint16_t value);
+esp_err_t nvs_get_highscore(void);
 void initialize_leds();
 void initialize_buttons();
 void initialize_lcd();
@@ -118,6 +123,8 @@ void app_main(void)
     // Print a starting message
     ESP_LOGI(TAG, "Main Program Running!\n");
     
+    initialize_nvs();
+
     initialize_leds();
 
     initialize_buttons();
@@ -129,6 +136,8 @@ void app_main(void)
     initialize_buzzer();
 
     initialize_freertos_objects();
+
+    nvs_get_highscore();
 
     reset_to_idle_state();
 
@@ -436,6 +445,47 @@ void game_cleanup_task(void *pvParameter)
     }
 }
 
+void initialize_nvs()
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) 
+    {
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
+}
+
+esp_err_t nvs_get_highscore(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err;
+
+    err = nvs_open("storage", NVS_READONLY, &handle);
+    if (err != ESP_OK) return err;
+
+    err = nvs_get_u16(handle, "highscore", &high_score);
+
+    nvs_close(handle);
+    return err;
+}
+
+esp_err_t nvs_set_highscore(uint16_t value)
+{
+    nvs_handle_t handle;
+    esp_err_t err;
+
+    err = nvs_open("storage", NVS_READWRITE, &handle);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u16(handle, "highscore", value);
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+    return err;
+}
+
 void initialize_leds()
 {
     // Configure the LEDS GPIO as an output
@@ -686,6 +736,7 @@ void reset_to_idle_state()
 {
     if(current_score > high_score)
     {
+        nvs_set_highscore(current_score);
         high_score = current_score;
     }
     turn_off_all_leds();
